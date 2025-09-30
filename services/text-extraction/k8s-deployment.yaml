@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: text-extraction-service
+  labels:
+    app: text-extraction-service
+    component: microservice
+    tier: processing
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: text-extraction-service
+  template:
+    metadata:
+      labels:
+        app: text-extraction-service
+        component: microservice
+        tier: processing
+    spec:
+      containers:
+      - name: text-extraction
+        image: enterprise-rag/text-extraction:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "rag-kafka-bootstrap:9092"
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      serviceAccountName: rag-service-account
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-extraction-service
+  labels:
+    app: text-extraction-service
+spec:
+  selector:
+    app: text-extraction-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: text-extraction-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: text-extraction-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
