@@ -60,3 +60,4 @@ VALUES
     ('test-doc-1', 'sample.txt', 'txt', 'completed', '{"description": "Sample document for testing"}'),
     ('test-doc-2', 'example.md', 'md', 'processing', '{"description": "Example markdown document"}')
 ON CONFLICT (doc_id) DO NOTHING;
+

@@ -2,12 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: text-extraction-service
+  namespace: enterprise-rag
   labels:
     app: text-extraction-service
-    component: microservice
-    tier: processing
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: text-extraction-service
@@ -15,23 +14,27 @@ spec:
     metadata:
       labels:
         app: text-extraction-service
-        component: microservice
-        tier: processing
     spec:
       containers:
       - name: text-extraction
-        image: enterprise-rag/text-extraction:latest
-        imagePullPolicy: IfNotPresent
+        image: enterprise-rag-platform/text-extraction:latest
         ports:
         - containerPort: 8080
-          name: http
         env:
         - name: KAFKA_BOOTSTRAP_SERVERS
-          value: "rag-kafka-bootstrap:9092"
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: KAFKA_BOOTSTRAP_SERVERS
         - name: AWS_REGION
-          value: "us-east-1"
-        - name: AWS_DEFAULT_REGION
-          value: "us-east-1"
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: AWS_REGION
+        - name: SERVICE_NAME
+          value: "text-extraction-service"
+        - name: SERVICE_VERSION
+          value: "1.0.0"
         resources:
           requests:
             memory: "512Mi"
@@ -45,61 +48,22 @@ spec:
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
           periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 2
-        volumeMounts:
-        - name: tmp-volume
-          mountPath: /tmp
-      volumes:
-      - name: tmp-volume
-        emptyDir: {}
-      serviceAccountName: rag-service-account
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: text-extraction-service
-  labels:
-    app: text-extraction-service
+  namespace: enterprise-rag
 spec:
   selector:
     app: text-extraction-service
   ports:
-  - name: http
-    port: 80
+  - port: 8080
     targetPort: 8080
-    protocol: TCP
   type: ClusterIP
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: text-extraction-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: text-extraction-service
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80

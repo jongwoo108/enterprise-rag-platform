@@ -201,3 +201,4 @@ if __name__ == "__main__":
     print(f"청크 크기: {settings.processing.chunk_size}")
     print(f"로그 레벨: {settings.service.log_level}")
     print(f"지원 파일 형식: {', '.join(settings.processing.supported_extensions)}")
+

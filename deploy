@@ -1,0 +1,457 @@
+#!/bin/bash
+# Enterprise RAG Platform - Infrastructure Deployment Script
+
+set -e
+
+# 색상 정의
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 함수 정의
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# 환경 변수 확인
+check_prerequisites() {
+    log_info "필수 도구 확인 중..."
+    
+    # AWS CLI 확인
+    if ! command -v aws &> /dev/null; then
+        log_error "AWS CLI가 설치되어 있지 않습니다."
+        exit 1
+    fi
+    
+    # Terraform 확인
+    if ! command -v terraform &> /dev/null; then
+        log_error "Terraform이 설치되어 있지 않습니다."
+        exit 1
+    fi
+    
+    # kubectl 확인
+    if ! command -v kubectl &> /dev/null; then
+        log_error "kubectl이 설치되어 있지 않습니다."
+        exit 1
+    fi
+    
+    # AWS 자격 증명 확인
+    if ! aws sts get-caller-identity &> /dev/null; then
+        log_error "AWS 자격 증명이 설정되어 있지 않습니다."
+        exit 1
+    fi
+    
+    log_success "모든 필수 도구가 준비되었습니다."
+}
+
+# Terraform 초기화
+init_terraform() {
+    log_info "Terraform 초기화 중..."
+    cd infrastructure/terraform
+    
+    terraform init
+    terraform validate
+    
+    log_success "Terraform 초기화 완료"
+}
+
+# Terraform 계획 생성
+plan_terraform() {
+    log_info "Terraform 실행 계획 생성 중..."
+    
+    terraform plan -out=tfplan
+    
+    log_warning "위의 계획을 검토하고 계속하려면 'y'를 입력하세요."
+    read -p "계속하시겠습니까? (y/N): " -n 1 -r
+    echo
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "배포가 취소되었습니다."
+        exit 0
+    fi
+}
+
+# Terraform 적용
+apply_terraform() {
+    log_info "Terraform 인프라 배포 시작..."
+    
+    terraform apply tfplan
+    
+    # 출력 값 저장
+    terraform output -json > ../../outputs.json
+    
+    log_success "인프라 배포 완료"
+}
+
+# EKS kubeconfig 설정
+setup_kubeconfig() {
+    log_info "EKS kubeconfig 설정 중..."
+    
+    CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+    AWS_REGION=$(terraform output -raw deployment_info | jq -r '.region')
+    
+    aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+    
+    log_success "kubeconfig 설정 완료"
+}
+
+# AWS Load Balancer Controller 설치
+install_alb_controller() {
+    log_info "AWS Load Balancer Controller 설치 중..."
+    
+    CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+    AWS_REGION=$(terraform output -raw deployment_info | jq -r '.region')
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    
+    # IAM 정책 생성
+    curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/install/iam_policy.json
+    
+    aws iam create-policy \
+        --policy-name AWSLoadBalancerControllerIAMPolicy \
+        --policy-document file://iam_policy.json || true
+    
+    # Service Account 생성
+    eksctl create iamserviceaccount \
+        --cluster=$CLUSTER_NAME \
+        --namespace=kube-system \
+        --name=aws-load-balancer-controller \
+        --role-name AmazonEKSLoadBalancerControllerRole \
+        --attach-policy-arn=arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+        --approve || true
+    
+    # Helm으로 컨트롤러 설치
+    helm repo add eks https://aws.github.io/eks-charts
+    helm repo update
+    
+    helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+        -n kube-system \
+        --set clusterName=$CLUSTER_NAME \
+        --set serviceAccount.create=false \
+        --set serviceAccount.name=aws-load-balancer-controller || true
+    
+    log_success "AWS Load Balancer Controller 설치 완료"
+}
+
+# ConfigMap 업데이트
+update_configmap() {
+    log_info "ConfigMap 업데이트 중..."
+    
+    cd ../../
+    
+    # Terraform 출력에서 값 추출
+    KAFKA_BOOTSTRAP_SERVERS=$(jq -r '.kafka_bootstrap_brokers_sasl_iam.value' outputs.json)
+    REDIS_HOST=$(jq -r '.redis_primary_endpoint.value' outputs.json)
+    OPENSEARCH_HOST=$(jq -r '.opensearch_endpoint.value' outputs.json | sed 's|https://||')
+    S3_BUCKET=$(jq -r '.s3_documents_bucket_name.value' outputs.json)
+    
+    # ConfigMap 파일 업데이트
+    sed -i "s/\${KAFKA_BOOTSTRAP_SERVERS}/$KAFKA_BOOTSTRAP_SERVERS/g" infrastructure/k8s/configmap.yaml
+    sed -i "s/\${REDIS_HOST}/$REDIS_HOST/g" infrastructure/k8s/configmap.yaml
+    sed -i "s/\${OPENSEARCH_HOST}/$OPENSEARCH_HOST/g" infrastructure/k8s/configmap.yaml
+    sed -i "s/\${S3_BUCKET}/$S3_BUCKET/g" infrastructure/k8s/configmap.yaml
+    
+    log_success "ConfigMap 업데이트 완료"
+}
+
+# 메인 함수
+main() {
+    log_info "=== Enterprise RAG Platform 인프라 배포 시작 ==="
+    
+    check_prerequisites
+    init_terraform
+    plan_terraform
+    apply_terraform
+    setup_kubeconfig
+    install_alb_controller
+    update_configmap
+    
+    log_success "=== 인프라 배포 완료 ==="
+    log_info "다음 단계: ./deploy-services.sh 실행"
+}
+
+# 스크립트 실행
+main "$@"
+#!/bin/bash
+# Enterprise RAG Platform - Services Deployment Script
+
+set -e
+
+# 색상 정의
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 함수 정의
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Docker 이미지 빌드 및 푸시
+build_and_push_images() {
+    log_info "Docker 이미지 빌드 및 푸시 중..."
+    
+    # AWS ECR 로그인
+    AWS_REGION=$(jq -r '.deployment_info.value.region' outputs.json)
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    ECR_REGISTRY="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+    
+    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+    
+    # ECR 리포지토리 생성
+    SERVICES=("text-extraction" "embedding-generator" "indexing-service" "search-api")
+    
+    for service in "${SERVICES[@]}"; do
+        log_info "ECR 리포지토리 생성: $service"
+        aws ecr create-repository --repository-name "enterprise-rag/$service" --region $AWS_REGION || true
+        
+        log_info "Docker 이미지 빌드: $service"
+        docker build -t "enterprise-rag/$service" "./services/$service/"
+        
+        log_info "Docker 이미지 태깅: $service"
+        docker tag "enterprise-rag/$service:latest" "$ECR_REGISTRY/enterprise-rag/$service:latest"
+        
+        log_info "Docker 이미지 푸시: $service"
+        docker push "$ECR_REGISTRY/enterprise-rag/$service:latest"
+    done
+    
+    log_success "모든 Docker 이미지 빌드 및 푸시 완료"
+}
+
+# Kubernetes 매니페스트 업데이트
+update_k8s_manifests() {
+    log_info "Kubernetes 매니페스트 업데이트 중..."
+    
+    AWS_REGION=$(jq -r '.deployment_info.value.region' outputs.json)
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    ECR_REGISTRY="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+    
+    # 각 서비스의 deployment.yaml 파일에서 이미지 경로 업데이트
+    SERVICES=("text-extraction" "embedding-generator" "indexing-service" "search-api")
+    
+    for service in "${SERVICES[@]}"; do
+        if [ -f "services/$service/k8s-deployment.yaml" ]; then
+            sed -i "s|image: .*|image: $ECR_REGISTRY/enterprise-rag/$service:latest|g" "services/$service/k8s-deployment.yaml"
+        fi
+    done
+    
+    log_success "Kubernetes 매니페스트 업데이트 완료"
+}
+
+# IAM 역할 생성 (IRSA)
+create_iam_roles() {
+    log_info "IAM 역할 생성 중..."
+    
+    CLUSTER_NAME=$(jq -r '.eks_cluster_name.value' outputs.json)
+    OIDC_ISSUER=$(jq -r '.eks_oidc_issuer_url.value' outputs.json)
+    AWS_REGION=$(jq -r '.deployment_info.value.region' outputs.json)
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    
+    # RAG 서비스용 IAM 역할 생성
+    cat > trust-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::$ACCOUNT_ID:oidc-provider/${OIDC_ISSUER#https://}"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "${OIDC_ISSUER#https://}:sub": "system:serviceaccount:enterprise-rag:rag-service-account",
+          "${OIDC_ISSUER#https://}:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+    # IAM 역할 생성
+    aws iam create-role \
+        --role-name EnterpriseRAGServiceRole \
+        --assume-role-policy-document file://trust-policy.json || true
+    
+    # 정책 연결
+    aws iam attach-role-policy \
+        --role-name EnterpriseRAGServiceRole \
+        --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess || true
+    
+    aws iam attach-role-policy \
+        --role-name EnterpriseRAGServiceRole \
+        --policy-arn arn:aws:iam::aws:policy/AmazonBedrockFullAccess || true
+    
+    # MSK 접근 정책 생성
+    cat > msk-policy.json << EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect",
+                "kafka-cluster:AlterCluster",
+                "kafka-cluster:DescribeCluster"
+            ],
+            "Resource": [
+                "arn:aws:kafka:$AWS_REGION:$ACCOUNT_ID:cluster/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:*Topic*",
+                "kafka-cluster:WriteData",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:$AWS_REGION:$ACCOUNT_ID:topic/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:$AWS_REGION:$ACCOUNT_ID:group/*"
+            ]
+        }
+    ]
+}
+EOF
+
+    aws iam create-policy \
+        --policy-name EnterpriseRAGMSKPolicy \
+        --policy-document file://msk-policy.json || true
+    
+    aws iam attach-role-policy \
+        --role-name EnterpriseRAGServiceRole \
+        --policy-arn arn:aws:iam::$ACCOUNT_ID:policy/EnterpriseRAGMSKPolicy || true
+    
+    log_success "IAM 역할 생성 완료"
+}
+
+# Kubernetes 리소스 배포
+deploy_k8s_resources() {
+    log_info "Kubernetes 리소스 배포 중..."
+    
+    # 네임스페이스 생성
+    kubectl apply -f infrastructure/k8s/namespace.yaml
+    
+    # ConfigMap 배포
+    kubectl apply -f infrastructure/k8s/configmap.yaml
+    
+    # Service Account 생성
+    cat > service-account.yaml << EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rag-service-account
+  namespace: enterprise-rag
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/EnterpriseRAGServiceRole
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rag-service-account
+  namespace: enterprise-rag-dev
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/EnterpriseRAGServiceRole
+EOF
+    
+    kubectl apply -f service-account.yaml
+    
+    # 각 서비스 배포
+    SERVICES=("text-extraction" "embedding-generator" "indexing-service" "search-api")
+    
+    for service in "${SERVICES[@]}"; do
+        if [ -f "services/$service/k8s-deployment.yaml" ]; then
+            log_info "배포 중: $service"
+            kubectl apply -f "services/$service/k8s-deployment.yaml"
+        fi
+    done
+    
+    # Ingress 배포
+    kubectl apply -f infrastructure/k8s/ingress.yaml
+    
+    log_success "Kubernetes 리소스 배포 완료"
+}
+
+# 배포 상태 확인
+check_deployment_status() {
+    log_info "배포 상태 확인 중..."
+    
+    # Pod 상태 확인
+    log_info "Pod 상태:"
+    kubectl get pods -n enterprise-rag
+    
+    # Service 상태 확인
+    log_info "Service 상태:"
+    kubectl get services -n enterprise-rag
+    
+    # Ingress 상태 확인
+    log_info "Ingress 상태:"
+    kubectl get ingress -n enterprise-rag
+    
+    # 로드 밸런서 엔드포인트 확인
+    log_info "로드 밸런서 엔드포인트를 확인하는 중..."
+    sleep 30
+    
+    ALB_ENDPOINT=$(kubectl get ingress rag-platform-ingress -n enterprise-rag -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+    
+    if [ -n "$ALB_ENDPOINT" ]; then
+        log_success "배포 완료! 엔드포인트: http://$ALB_ENDPOINT"
+    else
+        log_warning "로드 밸런서가 아직 준비되지 않았습니다. 몇 분 후 다시 확인해주세요."
+    fi
+}
+
+# 메인 함수
+main() {
+    log_info "=== Enterprise RAG Platform 서비스 배포 시작 ==="
+    
+    build_and_push_images
+    update_k8s_manifests
+    create_iam_roles
+    deploy_k8s_resources
+    check_deployment_status
+    
+    log_success "=== 서비스 배포 완료 ==="
+    log_info "배포 상태를 계속 모니터링하려면: kubectl get pods -n enterprise-rag -w"
+}
+
+# 스크립트 실행
+main "$@"
+

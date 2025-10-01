@@ -1,0 +1,343 @@
+# Enterprise RAG Platform - 보안 그룹 설정
+# 네트워크 보안을 위한 보안 그룹들 정의
+
+# ALB 보안 그룹
+resource "aws_security_group" "alb" {
+  name_prefix = "${var.project_name}-${var.environment}-alb-"
+  vpc_id      = var.vpc_id
+  description = "ALB 보안 그룹"
+
+  # HTTP 트래픽 허용 (80)
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_cidr_blocks
+  }
+
+  # HTTPS 트래픽 허용 (443)
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_cidr_blocks
+  }
+
+  # 모든 아웃바운드 트래픽 허용
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-alb-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# EKS 클러스터 보안 그룹
+resource "aws_security_group" "eks_cluster" {
+  name_prefix = "${var.project_name}-${var.environment}-eks-cluster-"
+  vpc_id      = var.vpc_id
+  description = "EKS 클러스터 보안 그룹"
+
+  # HTTPS 트래픽 허용 (443) - kubectl 접근용
+  ingress {
+    description = "HTTPS from VPC"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  # EKS 노드에서 클러스터로의 트래픽 허용 - 임시 비활성화 (순환 의존성 해결을 위해)
+  # ingress {
+  #   description     = "Node to cluster API server"
+  #   from_port       = 443
+  #   to_port         = 443
+  #   protocol        = "tcp"
+  #   security_groups = [aws_security_group.eks_node.id]
+  # }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-eks-cluster-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# EKS 노드 보안 그룹
+resource "aws_security_group" "eks_node" {
+  name_prefix = "${var.project_name}-${var.environment}-eks-node-"
+  vpc_id      = var.vpc_id
+  description = "EKS 노드 보안 그룹"
+
+  # EKS 클러스터에서 노드로의 트래픽 허용 - 임시 비활성화 (순환 의존성 해결을 위해)
+  # ingress {
+  #   description     = "Cluster to node"
+  #   from_port       = 0
+  #   to_port         = 65535
+  #   protocol        = "tcp"
+  #   security_groups = [aws_security_group.eks_cluster.id]
+  # }
+
+  # 노드 간 통신 허용
+  ingress {
+    description = "Node to node"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    self        = true
+  }
+
+  # ALB에서 노드로의 트래픽 허용
+  ingress {
+    description     = "ALB to node"
+    from_port       = 30000
+    to_port         = 32767
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  # SSH 접근 허용 (관리용)
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  # 모든 아웃바운드 트래픽 허용
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-eks-node-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# OpenSearch 보안 그룹
+resource "aws_security_group" "opensearch" {
+  name_prefix = "${var.project_name}-${var.environment}-opensearch-"
+  vpc_id      = var.vpc_id
+  description = "OpenSearch 보안 그룹"
+
+  # HTTPS 트래픽 허용 (443)
+  ingress {
+    description     = "HTTPS from EKS nodes"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  # HTTP 트래픽 허용 (9200) - 내부 통신용
+  ingress {
+    description     = "HTTP from EKS nodes"
+    from_port       = 9200
+    to_port         = 9200
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  # OpenSearch Dashboards 트래픽 허용 (5601)
+  ingress {
+    description     = "Dashboards from EKS nodes"
+    from_port       = 5601
+    to_port         = 5601
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-opensearch-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Redis (ElastiCache) 보안 그룹
+resource "aws_security_group" "redis" {
+  name_prefix = "${var.project_name}-${var.environment}-redis-"
+  vpc_id      = var.vpc_id
+  description = "Redis 보안 그룹"
+
+  # Redis 트래픽 허용 (6379)
+  ingress {
+    description     = "Redis from EKS nodes"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-redis-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Kafka (MSK) 보안 그룹
+resource "aws_security_group" "kafka" {
+  name_prefix = "${var.project_name}-${var.environment}-kafka-"
+  vpc_id      = var.vpc_id
+  description = "Kafka 보안 그룹"
+
+  # Kafka 브로커 트래픽 허용 (9092)
+  ingress {
+    description     = "Kafka from EKS nodes"
+    from_port       = 9092
+    to_port         = 9092
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  # Kafka TLS 트래픽 허용 (9094)
+  ingress {
+    description     = "Kafka TLS from EKS nodes"
+    from_port       = 9094
+    to_port         = 9094
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  # Kafka JMX 트래픽 허용 (11001)
+  ingress {
+    description     = "Kafka JMX from EKS nodes"
+    from_port       = 11001
+    to_port         = 11001
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  # Kafka 노드 간 통신 허용
+  ingress {
+    description = "Kafka inter-broker communication"
+    from_port   = 9092
+    to_port     = 9094
+    protocol    = "tcp"
+    self        = true
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-kafka-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# RDS 보안 그룹
+resource "aws_security_group" "rds" {
+  name_prefix = "${var.project_name}-${var.environment}-rds-"
+  vpc_id      = var.vpc_id
+  description = "RDS 보안 그룹"
+
+  # PostgreSQL 트래픽 허용 (5432)
+  ingress {
+    description     = "PostgreSQL from EKS nodes"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-rds-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# CloudWatch VPC 엔드포인트 보안 그룹 (선택사항)
+resource "aws_security_group" "vpc_endpoints" {
+  name_prefix = "${var.project_name}-${var.environment}-vpc-endpoints-"
+  vpc_id      = var.vpc_id
+  description = "VPC 엔드포인트 보안 그룹"
+
+  # HTTPS 트래픽 허용 (443)
+  ingress {
+    description     = "HTTPS from EKS nodes"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_node.id]
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-vpc-endpoints-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# 보안 그룹 출력 값들
+output "alb_sg_id" {
+  description = "ALB 보안 그룹 ID"
+  value       = aws_security_group.alb.id
+}
+
+output "eks_cluster_sg_id" {
+  description = "EKS 클러스터 보안 그룹 ID"
+  value       = aws_security_group.eks_cluster.id
+}
+
+output "eks_node_sg_id" {
+  description = "EKS 노드 보안 그룹 ID"
+  value       = aws_security_group.eks_node.id
+}
+
+output "opensearch_sg_id" {
+  description = "OpenSearch 보안 그룹 ID"
+  value       = aws_security_group.opensearch.id
+}
+
+output "redis_sg_id" {
+  description = "Redis 보안 그룹 ID"
+  value       = aws_security_group.redis.id
+}
+
+output "kafka_sg_id" {
+  description = "Kafka 보안 그룹 ID"
+  value       = aws_security_group.kafka.id
+}
+
+output "rds_sg_id" {
+  description = "RDS 보안 그룹 ID"
+  value       = aws_security_group.rds.id
+}
+
+output "vpc_endpoints_sg_id" {
+  description = "VPC 엔드포인트 보안 그룹 ID"
+  value       = aws_security_group.vpc_endpoints.id
+}

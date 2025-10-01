@@ -288,3 +288,4 @@ if __name__ == "__main__":
     for i, chunk in enumerate(chunks):
         print(f"\n청크 {i+1} ({len(chunk)}자):")
         print(chunk)
+

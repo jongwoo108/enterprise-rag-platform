@@ -207,6 +207,111 @@ services:
       timeout: 10s
       retries: 3
 
+  # Embedding Generator Service
+  embedding-generator:
+    build:
+      context: ./services/embedding-generator
+      dockerfile: Dockerfile
+    hostname: embedding-generator
+    container_name: rag-embedding-generator
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_ENDPOINT: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ragpassword
+      AWS_REGION: us-east-1
+      EMBEDDING_MODEL: amazon.titan-embed-text-v1
+      SERVICE_NAME: embedding-generator-service
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rag-network
+    volumes:
+      - ./shared:/app/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Indexing Service
+  indexing-service:
+    build:
+      context: ./services/indexing-service
+      dockerfile: Dockerfile
+    hostname: indexing-service
+    container_name: rag-indexing-service
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      OPENSEARCH_INDEX: enterprise-rag
+      REDIS_ENDPOINT: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ragpassword
+      SERVICE_NAME: indexing-service
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - rag-network
+    volumes:
+      - ./shared:/app/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Search API Service
+  search-api:
+    build:
+      context: ./services/search-api
+      dockerfile: Dockerfile
+    hostname: search-api
+    container_name: rag-search-api
+    ports:
+      - "8084:8080"
+    environment:
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      OPENSEARCH_INDEX: enterprise-rag
+      REDIS_ENDPOINT: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ragpassword
+      AWS_REGION: us-east-1
+      EMBEDDING_MODEL: amazon.titan-embed-text-v1
+      SERVICE_NAME: search-api-service
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    depends_on:
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - rag-network
+    volumes:
+      - ./shared:/app/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   zookeeper-data:
   zookeeper-logs:

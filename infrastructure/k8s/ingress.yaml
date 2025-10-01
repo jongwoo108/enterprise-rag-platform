@@ -1,0 +1,101 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-platform-ingress
+  namespace: enterprise-rag
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+spec:
+  rules:
+  - host: api.enterprise-rag.com
+    http:
+      paths:
+      - path: /text-extraction
+        pathType: Prefix
+        backend:
+          service:
+            name: text-extraction-service
+            port:
+              number: 8081
+      - path: /embedding
+        pathType: Prefix
+        backend:
+          service:
+            name: embedding-generator-service
+            port:
+              number: 8082
+      - path: /indexing
+        pathType: Prefix
+        backend:
+          service:
+            name: indexing-service
+            port:
+              number: 8083
+      - path: /search
+        pathType: Prefix
+        backend:
+          service:
+            name: search-api-service
+            port:
+              number: 8084
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: search-api-service
+            port:
+              number: 8084
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-platform-ingress-dev
+  namespace: enterprise-rag-dev
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  rules:
+  - host: api-dev.enterprise-rag.internal
+    http:
+      paths:
+      - path: /text-extraction
+        pathType: Prefix
+        backend:
+          service:
+            name: text-extraction-service
+            port:
+              number: 8081
+      - path: /embedding
+        pathType: Prefix
+        backend:
+          service:
+            name: embedding-generator-service
+            port:
+              number: 8082
+      - path: /indexing
+        pathType: Prefix
+        backend:
+          service:
+            name: indexing-service
+            port:
+              number: 8083
+      - path: /search
+        pathType: Prefix
+        backend:
+          service:
+            name: search-api-service
+            port:
+              number: 8084

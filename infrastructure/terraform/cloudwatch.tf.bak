@@ -1,0 +1,512 @@
+# Enterprise RAG Platform - CloudWatch 모니터링 설정
+# 로깅, 메트릭, 알람 설정
+
+# CloudWatch 로그 그룹들
+resource "aws_cloudwatch_log_group" "eks_cluster" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/eks/${var.eks_cluster_name}/cluster"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-eks-cluster-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "opensearch" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/opensearch/${var.opensearch_domain_id}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-opensearch-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "redis" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/elasticache/${var.redis_cluster_id}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-redis-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "kafka" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/kafka/${var.kafka_cluster_arn}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-kafka-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "rds" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/rds/${var.rds_instance_id}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-rds-logs"
+  })
+}
+
+# 애플리케이션 로그 그룹들
+resource "aws_cloudwatch_log_group" "text_extraction" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/eks/${var.project_name}-${var.environment}/text-extraction"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-text-extraction-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "embedding_generator" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/eks/${var.project_name}-${var.environment}/embedding-generator"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-embedding-generator-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "indexing_service" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/eks/${var.project_name}-${var.environment}/indexing-service"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-indexing-service-logs"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "search_api" {
+  count             = var.enable_logs ? 1 : 0
+  name              = "/aws/eks/${var.project_name}-${var.environment}/search-api"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-search-api-logs"
+  })
+}
+
+# SNS 토픽 (알람용)
+resource "aws_sns_topic" "alerts" {
+  count = var.enable_alarms ? 1 : 0
+  name  = "${var.project_name}-${var.environment}-alerts"
+
+  kms_master_key_id = var.kms_key_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-alerts-topic"
+  })
+}
+
+# SNS 토픽 정책
+resource "aws_sns_topic_policy" "alerts" {
+  count = var.enable_alarms ? 1 : 0
+  arn   = aws_sns_topic.alerts[0].arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudwatch.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.alerts[0].arn
+      }
+    ]
+  })
+}
+
+# CloudWatch 알람들
+# EKS 클러스터 알람
+resource "aws_cloudwatch_metric_alarm" "eks_cluster_cpu_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-eks-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EKS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "EKS 클러스터 CPU 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    ClusterName = var.eks_cluster_name
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-eks-cpu-high-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "eks_cluster_memory_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-eks-memory-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/EKS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "85"
+  alarm_description   = "EKS 클러스터 메모리 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    ClusterName = var.eks_cluster_name
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-eks-memory-high-alarm"
+  })
+}
+
+# OpenSearch 알람
+resource "aws_cloudwatch_metric_alarm" "opensearch_cpu_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-opensearch-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ES"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "OpenSearch CPU 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    DomainName = var.opensearch_domain_id
+    ClientId   = data.aws_caller_identity.current.account_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-opensearch-cpu-high-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "opensearch_storage_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-opensearch-storage-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "StorageUtilization"
+  namespace           = "AWS/ES"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "85"
+  alarm_description   = "OpenSearch 스토리지 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    DomainName = var.opensearch_domain_id
+    ClientId   = data.aws_caller_identity.current.account_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-opensearch-storage-high-alarm"
+  })
+}
+
+# Redis 알람
+resource "aws_cloudwatch_metric_alarm" "redis_cpu_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-redis-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ElastiCache"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "Redis CPU 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    CacheClusterId = var.redis_cluster_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-redis-cpu-high-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "redis_memory_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-redis-memory-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "DatabaseMemoryUsagePercentage"
+  namespace           = "AWS/ElastiCache"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "85"
+  alarm_description   = "Redis 메모리 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    CacheClusterId = var.redis_cluster_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-redis-memory-high-alarm"
+  })
+}
+
+# Kafka 알람
+resource "aws_cloudwatch_metric_alarm" "kafka_broker_count_low" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-kafka-broker-count-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "BrokerCount"
+  namespace           = "AWS/Kafka"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "2"
+  alarm_description   = "Kafka 브로커 수가 적습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    ClusterName = var.kafka_cluster_arn
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-kafka-broker-count-low-alarm"
+  })
+}
+
+# RDS 알람
+resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-rds-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "RDS CPU 사용률이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_instance_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-rds-cpu-high-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_connections_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-rds-connections-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "DatabaseConnections"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "RDS 데이터베이스 연결 수가 많습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_instance_id
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-rds-connections-high-alarm"
+  })
+}
+
+# 커스텀 메트릭 알람 (애플리케이션 레벨)
+resource "aws_cloudwatch_metric_alarm" "application_error_rate_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-app-error-rate-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "3"
+  metric_name         = "ErrorRate"
+  namespace           = "EnterpriseRAG/Applications"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5"
+  alarm_description   = "애플리케이션 에러율이 높습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-app-error-rate-high-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "application_response_time_high" {
+  count               = var.enable_alarms ? 1 : 0
+  alarm_name          = "${var.project_name}-${var.environment}-app-response-time-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ResponseTime"
+  namespace           = "EnterpriseRAG/Applications"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5000"
+  alarm_description   = "애플리케이션 응답 시간이 길어졌습니다"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-app-response-time-high-alarm"
+  })
+}
+
+# 대시보드
+resource "aws_cloudwatch_dashboard" "main" {
+  count          = var.enable_alarms ? 1 : 0
+  dashboard_name = "${var.project_name}-${var.environment}-dashboard"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/EKS", "CPUUtilization", "ClusterName", var.eks_cluster_name],
+            [".", "MemoryUtilization", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "EKS 클러스터 메트릭"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ES", "CPUUtilization", "DomainName", var.opensearch_domain_id],
+            [".", "StorageUtilization", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "OpenSearch 메트릭"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ElastiCache", "CPUUtilization", "CacheClusterId", var.redis_cluster_id],
+            [".", "DatabaseMemoryUsagePercentage", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Redis 메트릭"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 18
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/Kafka", "BrokerCount", "ClusterName", var.kafka_cluster_arn],
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.rds_instance_id]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Kafka & RDS 메트릭"
+          period  = 300
+        }
+      }
+    ]
+  })
+}
+
+# 현재 AWS 계정 및 리전 정보
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# 출력 값들
+output "log_groups" {
+  description = "CloudWatch 로그 그룹들"
+  value = {
+    eks_cluster        = var.enable_logs ? aws_cloudwatch_log_group.eks_cluster[0].name : null
+    opensearch         = var.enable_logs ? aws_cloudwatch_log_group.opensearch[0].name : null
+    redis              = var.enable_logs ? aws_cloudwatch_log_group.redis[0].name : null
+    kafka              = var.enable_logs ? aws_cloudwatch_log_group.kafka[0].name : null
+    rds                = var.enable_logs ? aws_cloudwatch_log_group.rds[0].name : null
+    text_extraction    = var.enable_logs ? aws_cloudwatch_log_group.text_extraction[0].name : null
+    embedding_generator = var.enable_logs ? aws_cloudwatch_log_group.embedding_generator[0].name : null
+    indexing_service   = var.enable_logs ? aws_cloudwatch_log_group.indexing_service[0].name : null
+    search_api         = var.enable_logs ? aws_cloudwatch_log_group.search_api[0].name : null
+  }
+}
+
+output "alarms" {
+  description = "CloudWatch 알람들"
+  value = {
+    eks_cpu_high            = var.enable_alarms ? aws_cloudwatch_metric_alarm.eks_cluster_cpu_high[0].arn : null
+    eks_memory_high         = var.enable_alarms ? aws_cloudwatch_metric_alarm.eks_cluster_memory_high[0].arn : null
+    opensearch_cpu_high     = var.enable_alarms ? aws_cloudwatch_metric_alarm.opensearch_cpu_high[0].arn : null
+    opensearch_storage_high = var.enable_alarms ? aws_cloudwatch_metric_alarm.opensearch_storage_high[0].arn : null
+    redis_cpu_high          = var.enable_alarms ? aws_cloudwatch_metric_alarm.redis_cpu_high[0].arn : null
+    redis_memory_high       = var.enable_alarms ? aws_cloudwatch_metric_alarm.redis_memory_high[0].arn : null
+    kafka_broker_count_low  = var.enable_alarms ? aws_cloudwatch_metric_alarm.kafka_broker_count_low[0].arn : null
+    rds_cpu_high            = var.enable_alarms ? aws_cloudwatch_metric_alarm.rds_cpu_high[0].arn : null
+    rds_connections_high    = var.enable_alarms ? aws_cloudwatch_metric_alarm.rds_connections_high[0].arn : null
+    app_error_rate_high     = var.enable_alarms ? aws_cloudwatch_metric_alarm.application_error_rate_high[0].arn : null
+    app_response_time_high  = var.enable_alarms ? aws_cloudwatch_metric_alarm.application_response_time_high[0].arn : null
+  }
+}
+
+output "sns_topic_arn" {
+  description = "SNS 토픽 ARN"
+  value       = var.enable_alarms ? aws_sns_topic.alerts[0].arn : null
+}
+
+output "dashboard_url" {
+  description = "CloudWatch 대시보드 URL"
+  value       = var.enable_alarms ? "https://${data.aws_region.current.name}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.main[0].dashboard_name}" : null
+}

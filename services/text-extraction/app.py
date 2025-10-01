@@ -14,7 +14,7 @@ import boto3
 import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from kafka import KafkaProducer
+from confluent_kafka import Producer, Consumer, KafkaError
 from loguru import logger
 
 # 기존 bedrock-test의 텍스트 추출 로직을 마이크로서비스로 재구성
@@ -43,11 +43,10 @@ app = FastAPI(
 s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 # Kafka Producer
-kafka_producer = KafkaProducer(
-    bootstrap_servers=[KAFKA_BOOTSTRAP_SERVERS],
-    value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode('utf-8'),
-    key_serializer=lambda k: k.encode('utf-8') if k else None
-)
+kafka_producer = Producer({
+    'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+    'client.id': f'{SERVICE_NAME}-producer'
+})
 
 # 데이터 모델
 class DocumentProcessRequest(BaseModel):
@@ -185,10 +184,10 @@ async def process_document_async(
         }
         
         # text-extracted 토픽으로 전송
-        kafka_producer.send(
+        kafka_producer.produce(
             topic='text-extracted',
             key=doc_id,
-            value=kafka_message
+            value=json.dumps(kafka_message, ensure_ascii=False)
         )
         
         kafka_producer.flush()  # 즉시 전송 보장
@@ -209,10 +208,10 @@ async def process_document_async(
             "service_version": SERVICE_VERSION
         }
         
-        kafka_producer.send(
+        kafka_producer.produce(
             topic='processing-errors',
             key=doc_id,
-            value=error_message
+            value=json.dumps(error_message, ensure_ascii=False)
         )
         
         kafka_producer.flush()
@@ -220,33 +219,47 @@ async def process_document_async(
 # Kafka 이벤트 리스너 (S3 업로드 이벤트 수신)
 async def kafka_consumer_task():
     """Kafka에서 문서 업로드 이벤트를 수신하여 처리"""
-    from kafka import KafkaConsumer
+    consumer = Consumer({
+        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+        'group.id': 'text-extraction-service-group',
+        'auto.offset.reset': 'latest'
+    })
     
-    consumer = KafkaConsumer(
-        'doc-ingestion',
-        bootstrap_servers=[KAFKA_BOOTSTRAP_SERVERS],
-        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-        group_id='text-extraction-service-group',
-        auto_offset_reset='latest'
-    )
+    consumer.subscribe(['doc-ingestion'])
     
     logger.info("Kafka 컨슈머 시작: doc-ingestion 토픽 수신 대기")
     
-    for message in consumer:
-        try:
-            event_data = message.value
-            doc_id = event_data.get('doc_id')
-            s3_bucket = event_data.get('s3_bucket')
-            s3_key = event_data.get('s3_key')
-            metadata = event_data.get('metadata', {})
+    try:
+        while True:
+            msg = consumer.poll(timeout=1.0)
+            if msg is None:
+                await asyncio.sleep(0.1)
+                continue
             
-            logger.info(f"새 문서 처리 요청 수신: {doc_id}")
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    continue
+                else:
+                    logger.error(f"Kafka 오류: {msg.error()}")
+                    continue
             
-            # 비동기 처리
-            await process_document_async(s3_bucket, s3_key, doc_id, metadata)
-            
-        except Exception as e:
-            logger.error(f"Kafka 메시지 처리 오류: {str(e)}")
+            try:
+                event_data = json.loads(msg.value().decode('utf-8'))
+                doc_id = event_data.get('doc_id')
+                s3_bucket = event_data.get('s3_bucket')
+                s3_key = event_data.get('s3_key')
+                metadata = event_data.get('metadata', {})
+                
+                logger.info(f"새 문서 처리 요청 수신: {doc_id}")
+                
+                # 비동기 처리
+                await process_document_async(s3_bucket, s3_key, doc_id, metadata)
+                
+            except Exception as e:
+                logger.error(f"Kafka 메시지 처리 오류: {str(e)}")
+                
+    finally:
+        consumer.close()
 
 # 애플리케이션 시작 시 Kafka 컨슈머 시작
 @app.on_event("startup")
