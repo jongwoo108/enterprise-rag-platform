@@ -1,4 +1,4 @@
-# 🏢 Enterprise RAG Platform
+# Enterprise RAG Platform
 
 > **Enterprise-grade distributed RAG system with Kubernetes, Kafka, Airflow, and AWS services for large-scale document processing and semantic search**
 
@@ -8,22 +8,22 @@
 
 ---
 
-## 📊 프로젝트 개요
+## 프로젝트 개요
 
 이 프로젝트는 **서버리스 RAG 프로토타입**에서 **엔터프라이즈급 분산 시스템**으로 진화한 대규모 지식 관리 플랫폼입니다.
 
-### 🎯 주요 목표
+### 주요 목표
 - **100배 처리량 향상**: 1,000 → 100,000+ 문서/시간
 - **무제한 확장성**: 수평적 마이크로서비스 아키텍처
 - **실시간 스트리밍**: Kafka 기반 연속 데이터 처리
 - **엔터프라이즈 안정성**: 99.99% 가용성 목표
 
-### 🔗 관련 프로젝트
+### 관련 프로젝트
 - **프로토타입**: [bedrock-test](https://github.com/jongwoo108/bedrock-test) - 서버리스 RAG 시스템 (완성)
 
 ---
 
-## 🏗️ 아키텍처
+## 아키텍처
 
 ### 시스템 다이어그램
 ```
@@ -76,7 +76,7 @@
 
 ---
 
-## 📁 프로젝트 구조
+## 프로젝트 구조
 
 ```
 enterprise-rag-platform/
@@ -115,7 +115,7 @@ enterprise-rag-platform/
 
 ---
 
-## 🚀 빠른 시작
+## 빠른 시작
 
 ### 전제 조건
 - AWS CLI 설정 완료
@@ -155,7 +155,7 @@ helm install rag-platform ./rag-platform
 
 ---
 
-## 📈 성능 목표
+## 성능 목표
 
 | 지표 | 현재 (서버리스) | 목표 (엔터프라이즈) | 개선율 |
 |------|----------------|---------------------|--------|
@@ -166,7 +166,7 @@ helm install rag-platform ./rag-platform
 
 ---
 
-## 🛣️ 개발 로드맵
+## 개발 로드맵
 
 ### Phase 1: 인프라 구축 (진행 중)
 - [x] 프로젝트 구조 생성
@@ -188,7 +188,7 @@ helm install rag-platform ./rag-platform
 
 ---
 
-## 🤝 기여 방법
+## 기여 방법
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -198,19 +198,19 @@ helm install rag-platform ./rag-platform
 
 ---
 
-## 📄 라이선스
+## 라이선스
 
 이 프로젝트는 MIT 라이선스 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
 
 ---
 
-## 📞 연락처
+## 연락처
 
 - **프로젝트 링크**: [https://github.com/jongwoo108/enterprise-rag-platform](https://github.com/jongwoo108/enterprise-rag-platform)
 - **관련 프로젝트**: [bedrock-test (서버리스 프로토타입)](https://github.com/jongwoo108/bedrock-test)
 
 ---
 
-## 🙏 감사의 말
+## 감사의 말
 
 이 프로젝트는 [bedrock-test](https://github.com/jongwoo108/bedrock-test)에서 검증된 서버리스 RAG 시스템을 기반으로 구축되었습니다.
