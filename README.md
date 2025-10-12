@@ -33,23 +33,6 @@
 #### User Query Execution Flow (Runtime Sequence)
 <img width="2294" height="1562" alt="User Query Execution Flow (Runtime Sequence" src="https://github.com/user-attachments/assets/68fca0fb-e992-419b-aaba-da4d4f9824ad" />
 
-### System Architecture Overview
-
-<table>
-  <tr>
-    <td align="center" width="40%">
-      <strong>Enterprise RAG Architecture on AWS</strong><br>
-      <img src="https://github.com/user-attachments/assets/3b548493-0897-4efd-871c-315617cbec6a" width="400">
-    </td>
-    <td align="center" width="60%">
-      <strong>User Query Execution Flow (Runtime Sequence)</strong><br>
-      <img src="https://github.com/user-attachments/assets/68fca0fb-e992-419b-aaba-da4d4f9824ad" width="800">
-    </td>
-  </tr>
-</table>
-
-
-
 ###  기술 스택
 - **컨테이너 오케스트레이션**: Amazon EKS (Kubernetes)
 - **메시지 스트리밍**: Amazon MSK (Apache Kafka)
