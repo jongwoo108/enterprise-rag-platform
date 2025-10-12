@@ -167,8 +167,3 @@ helm install rag-platform ./rag-platform
 - **프로젝트 링크**: [https://github.com/jongwoo108/enterprise-rag-platform](https://github.com/jongwoo108/enterprise-rag-platform)
 - **관련 프로젝트**: [bedrock-test (서버리스 프로토타입)](https://github.com/jongwoo108/bedrock-test)
 
----
-
-## 레퍼런스
-
-이 프로젝트는 [bedrock-test](https://github.com/jongwoo108/bedrock-test)에서 검증된 서버리스 RAG 시스템을 기반으로 구축되었습니다.
