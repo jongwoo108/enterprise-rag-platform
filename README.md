@@ -28,8 +28,7 @@
 ### 시스템 다이어그램
 #### Enterprise RAG Architecture on AWS
 <img width="480" height="1170" alt="Enterprise RAG Architecture on AWS" src="https://github.com/user-attachments/assets/3b548493-0897-4efd-871c-315617cbec6a" />
----
----
+
 
 #### User Query Execution Flow (Runtime Sequence)
 <img width="2294" height="1562" alt="User Query Execution Flow (Runtime Sequence" src="https://github.com/user-attachments/assets/68fca0fb-e992-419b-aaba-da4d4f9824ad" />
