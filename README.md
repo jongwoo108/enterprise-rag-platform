@@ -37,11 +37,11 @@
   <tr>
     <td align="center" width="40%">
       <strong>Enterprise RAG Architecture on AWS</strong><br>
-      <img src="..." width="360">
+      <img src="[...](https://github.com/user-attachments/assets/3b548493-0897-4efd-871c-315617cbec6a)" width="360">
     </td>
     <td align="center" width="60%">
       <strong>User Query Execution Flow (Runtime Sequence)</strong><br>
-      <img src="..." width="700">
+      <img src="[...](https://github.com/user-attachments/assets/68fca0fb-e992-419b-aaba-da4d4f9824ad)" width="700">
     </td>
   </tr>
 </table>
