@@ -25,11 +25,10 @@
 
 ## 아키텍처
 
-### 시스템 다이어그램
-#### Enterprise RAG Architecture on AWS
+### Enterprise RAG Architecture on AWS
 <img width="1020" height="480" alt="Enterprise RAG Architecture on AWS_2rows" src="https://github.com/user-attachments/assets/18ef8fd7-35d4-42c0-ab4c-3b5785924c61" />
 
-#### User Query Execution Flow (Runtime Sequence)
+### User Query Execution Flow (Runtime Sequence)
 <img width="2294" height="1562" alt="User Query Execution Flow (Runtime Sequence" src="https://github.com/user-attachments/assets/68fca0fb-e992-419b-aaba-da4d4f9824ad" />
 
 ###  기술 스택
